@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Battleship: You vs. the Computer</title>
+<meta name="description" content="Play the classic Battleship game in your browser against a computer opponent.">
+<style>
+  :root {
+    --bg: #0b1d33;
+    --panel: #12294a;
+    --panel-2: #183560;
+    --water: #1d4f86;
+    --water-hover: #2a66a8;
+    --ship: #8a99ad;
+    --hit: #e5484d;
+    --miss: #c9d6e6;
+    --sunk: #7a1f24;
+    --accent: #f5b041;
+    --text: #eef3f9;
+    --muted: #9fb3cc;
+    --ok: #3fb950;
+    --cell: clamp(24px, 3.6vw, 38px);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(circle at top, #15345c 0%, var(--bg) 60%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header { text-align: center; padding: 22px 12px 6px; }
+  h1 { margin: 0; font-size: clamp(26px, 4vw, 40px); letter-spacing: 1px; }
+  h1 span { color: var(--accent); }
+  .subtitle { color: var(--muted); margin-top: 6px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 12px; }
+
+  .status {
+    background: var(--panel);
+    border: 1px solid var(--panel-2);
+    border-radius: 12px;
+    padding: 14px 18px;
+    text-align: center;
+    font-size: 18px;
+    min-height: 54px;
+    margin-bottom: 16px;
+  }
+  .status strong { color: var(--accent); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 16px; align-items: center; }
+  button, select {
+    font: inherit;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid #2b4f80;
+  }
+  button:hover:not(:disabled), select:hover { background: #21457a; }
+  button.primary { background: var(--accent); color: #1b1b1b; border-color: var(--accent); font-weight: 700; }
+  button.primary:hover:not(:disabled) { background: #ffc35c; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  label.diff { color: var(--muted); display: flex; gap: 8px; align-items: center; }
+
+  .boards { display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; }
+  .board-wrap { background: var(--panel); border: 1px solid var(--panel-2); border-radius: 14px; padding: 14px; }
+  .board-wrap h2 { margin: 0 0 10px; font-size: 18px; text-align: center; }
+  .board-wrap h2 small { color: var(--muted); font-weight: normal; }
+  .grid-outer { display: grid; grid-template-columns: calc(var(--cell) * .8) auto; }
+  .col-labels, .row-labels { display: grid; color: var(--muted); font-size: 12px; }
+  .col-labels { grid-template-columns: repeat(10, var(--cell)); grid-column: 2; }
+  .row-labels { grid-template-rows: repeat(10, var(--cell)); }
+  .col-labels div, .row-labels div { display: flex; align-items: center; justify-content: center; height: calc(var(--cell) * .8); }
+  .row-labels div { height: var(--cell); }
+  .grid { display: grid; grid-template-columns: repeat(10, var(--cell)); grid-template-rows: repeat(10, var(--cell)); gap: 2px; }
+  .cell {
+    width: var(--cell); height: var(--cell);
+    background: var(--water);
+    border-radius: 4px;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    font-size: calc(var(--cell) * .5);
+    user-select: none;
+  }
+  .cell.ship { background: var(--ship); }
+  .cell.preview-ok { background: #4c9a6a; }
+  .cell.preview-bad { background: #a0474a; }
+  .cell.miss::after { content: ""; width: 28%; height: 28%; border-radius: 50%; background: var(--miss); }
+  .cell.hit { background: var(--hit); }
+  .cell.hit::after { content: "\2715"; color: #fff; font-weight: 700; }
+  .cell.sunk { background: var(--sunk); }
+  .cell.last { outline: 3px solid var(--accent); outline-offset: -2px; }
+  .enemy.active .cell:not(.hit):not(.miss):not(.sunk) { cursor: crosshair; }
+  .enemy.active .cell:not(.hit):not(.miss):not(.sunk):hover { background: var(--water-hover); }
+  .player.placing .cell { cursor: pointer; }
+
+  .fleet { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: calc(var(--cell) * 11); }
+  .fleet .tag {
+    font-size: 13px; padding: 4px 9px; border-radius: 999px; background: var(--panel-2); color: var(--text);
+    border: 1px solid #2b4f80;
+  }
+  .fleet .tag.sunk { text-decoration: line-through; color: var(--muted); opacity: .7; }
+  .fleet .tag.placed { opacity: .45; }
+  .fleet .tag.selected { background: var(--accent); color: #1b1b1b; border-color: var(--accent); font-weight: 700; }
+  .fleet.placement .tag { cursor: pointer; }
+
+  .stats { display: flex; gap: 18px; justify-content: center; margin-top: 10px; color: var(--muted); font-size: 14px; }
+  .stats b { color: var(--text); }
+
+  .log {
+    margin: 18px auto 0; max-width: 760px; background: var(--panel); border: 1px solid var(--panel-2);
+    border-radius: 12px; padding: 10px 16px; max-height: 170px; overflow-y: auto; font-size: 14px;
+  }
+  .log h3 { margin: 4px 0 8px; font-size: 15px; color: var(--muted); }
+  .log p { margin: 4px 0; }
+  .log .you { color: #8fd3ff; }
+  .log .ai { color: #ffb4a8; }
+
+  .how { margin: 18px auto 0; max-width: 760px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .how summary { cursor: pointer; color: var(--text); }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 10; }
+  .modal-bg.show { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--accent); border-radius: 16px; padding: 28px 32px; text-align: center; max-width: 360px; }
+  .modal h2 { margin-top: 0; font-size: 28px; }
+  .modal p { color: var(--muted); }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0 18px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#9875; <span>Battleship</span></h1>
+  <div class="subtitle">You vs. the Computer</div>
+</header>
+
+<main>
+  <div class="status" id="status"></div>
+
+  <div class="controls" id="setupControls">
+    <button id="rotateBtn">Rotate ship (R)</button>
+    <button id="randomBtn">Place ships randomly</button>
+    <button id="clearBtn">Clear board</button>
+    <label class="diff">Opponent:
+      <select id="difficulty">
+        <option value="easy">Easy (guesses randomly)</option>
+        <option value="normal" selected>Normal (hunts your ships)</option>
+        <option value="hard">Hard (plays the odds)</option>
+      </select>
+    </label>
+    <button id="startBtn" class="primary" disabled>Start battle</button>
+  </div>
+
+  <div class="controls hidden" id="battleControls">
+    <button id="newGameBtn">New game</button>
+  </div>
+
+  <div class="boards">
+    <div class="board-wrap">
+      <h2>Your Fleet</h2>
+      <div class="grid-outer" id="playerOuter"></div>
+      <div class="fleet" id="playerFleet"></div>
+      <div class="stats" id="aiStats"></div>
+    </div>
+    <div class="board-wrap hidden" id="enemyWrap">
+      <h2>Enemy Waters <small>(click to fire)</small></h2>
+      <div class="grid-outer" id="enemyOuter"></div>
+      <div class="fleet" id="enemyFleet"></div>
+      <div class="stats" id="playerStats"></div>
+    </div>
+  </div>
+
+  <div class="log hidden" id="logWrap">
+    <h3>Battle log</h3>
+    <div id="log"></div>
+  </div>
+
+  <details class="how">
+    <summary>How to play</summary>
+    <p>1. Place your 5 ships on your board. Pick a ship from the list, then click a square. Use <b>Rotate</b> (or press R) to switch between horizontal and vertical, or click <b>Place ships randomly</b>.</p>
+    <p>2. Choose how tough the computer should be, then click <b>Start battle</b>.</p>
+    <p>3. Take turns firing. Click a square in <b>Enemy Waters</b>. A red &#10005; is a hit, a white dot is a miss. After each of your shots, the computer fires back at your fleet.</p>
+    <p>4. Sink all 5 enemy ships before the computer sinks yours to win.</p>
+  </details>
+</main>
+
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h2 id="modalTitle"></h2>
+    <p id="modalText"></p>
+    <button class="primary" id="playAgainBtn">Play again</button>
+  </div>
+</div>
+
+<footer>Built for the Cognition interview exercise.</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  const SIZE = 10;
+  const LETTERS = "ABCDEFGHIJ";
+  const SHIPS = [
+    { name: "Carrier", size: 5 },
+    { name: "Battleship", size: 4 },
+    { name: "Cruiser", size: 3 },
+    { name: "Submarine", size: 3 },
+    { name: "Destroyer", size: 2 }
+  ];
+  const AI_DELAY_MS = 650;
+
+  const $ = (id) => document.getElementById(id);
+  const key = (r, c) => r * SIZE + c;
+  const label = (r, c) => LETTERS[c] + (r + 1);
+  const inBounds = (r, c) => r >= 0 && r < SIZE && c >= 0 && c < SIZE;
+  const randInt = (n) => Math.floor(Math.random() * n);
+
+  // ---------- Board model ----------
+  function makeBoard() {
+    return {
+      ships: [],                        // { name, size, cells: [[r,c]...], hits: Set }
+      owner: new Array(SIZE * SIZE).fill(-1), // index of ship on each cell, -1 = water
+      shots: new Array(SIZE * SIZE).fill(null) // null | "miss" | "hit"
+    };
+  }
+
+  function shipCells(r, c, size, vertical) {
+    const cells = [];
+    for (let i = 0; i < size; i++) cells.push(vertical ? [r + i, c] : [r, c + i]);
+    return cells;
+  }
+
+  function canPlace(board, cells) {
+    return cells.every(([r, c]) => inBounds(r, c) && board.owner[key(r, c)] === -1);
+  }
+
+  function placeShip(board, ship, cells) {
+    const idx = board.ships.length;
+    board.ships.push({ name: ship.name, size: ship.size, cells, hits: new Set() });
+    cells.forEach(([r, c]) => { board.owner[key(r, c)] = idx; });
+  }
+
+  function randomFleet() {
+    const board = makeBoard();
+    SHIPS.forEach((ship) => {
+      for (;;) {
+        const vertical = Math.random() < 0.5;
+        const r = randInt(vertical ? SIZE - ship.size + 1 : SIZE);
+        const c = randInt(vertical ? SIZE : SIZE - ship.size + 1);
+        const cells = shipCells(r, c, ship.size, vertical);
+        if (canPlace(board, cells)) { placeShip(board, ship, cells); break; }
+      }
+    });
+    return board;
+  }
+
+  // Returns { result: "miss"|"hit"|"sunk", ship }
+  function fireAt(board, r, c) {
+    const k = key(r, c);
+    const idx = board.owner[k];
+    if (idx === -1) { board.shots[k] = "miss"; return { result: "miss" }; }
+    board.shots[k] = "hit";
+    const ship = board.ships[idx];
+    ship.hits.add(k);
+    return { result: ship.hits.size === ship.size ? "sunk" : "hit", ship };
+  }
+
+  const isSunk = (ship) => ship.hits.size === ship.size;
+  const allSunk = (board) => board.ships.length > 0 && board.ships.every(isSunk);
+
+  // ---------- Computer opponent ----------
+  // The computer only knows what a real player would know: where it has fired,
+  // whether each shot hit or missed, and which ship it sank (announced on sinking).
+  function makeAI(level) {
+    const shots = new Array(SIZE * SIZE).fill(null); // null | "miss" | "hit" | "sunk"
+    let remaining = SHIPS.map((s) => s.size);
+
+    const unshot = () => {
+      const list = [];
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (!shots[key(r, c)]) list.push([r, c]);
+      return list;
+    };
+    const openHits = () => {
+      const list = [];
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (shots[key(r, c)] === "hit") list.push([r, c]);
+      return list;
+    };
+    const pick = (list) => list[randInt(list.length)];
+
+    function easyMove() { return pick(unshot()); }
+
+    // "Hunt and target": search in a checkerboard pattern; once a ship is hit, attack around it.
+    function normalMove() {
+      const hits = openHits();
+      if (hits.length) {
+        const hitSet = new Set(hits.map(([r, c]) => key(r, c)));
+        // If two or more hits line up, keep going along that line.
+        for (const [r, c] of hits) {
+          for (const [dr, dc] of [[0, 1], [1, 0]]) {
+            if (hitSet.has(key(r + dr, c + dc))) {
+              const ends = [];
+              let rr = r, cc = c;
+              while (inBounds(rr, cc) && hitSet.has(key(rr, cc))) { rr -= dr; cc -= dc; }
+              if (inBounds(rr, cc) && !shots[key(rr, cc)]) ends.push([rr, cc]);
+              rr = r; cc = c;
+              while (inBounds(rr, cc) && hitSet.has(key(rr, cc))) { rr += dr; cc += dc; }
+              if (inBounds(rr, cc) && !shots[key(rr, cc)]) ends.push([rr, cc]);
+              if (ends.length) return pick(ends);
+            }
+          }
+        }
+        // Otherwise try any open square next to a hit.
+        const neighbors = [];
+        for (const [r, c] of hits) {
+          for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nr = r + dr, nc = c + dc;
+            if (inBounds(nr, nc) && !shots[key(nr, nc)]) neighbors.push([nr, nc]);
+          }
+        }
+        if (neighbors.length) return pick(neighbors);
+      }
+      const open = unshot();
+      const parity = open.filter(([r, c]) => (r + c) % 2 === 0);
+      return pick(parity.length ? parity : open);
+    }
+
+    // "Plays the odds": count every way the remaining ships could still fit,
+    // and fire where a ship is most likely to be.
+    function hardMove() {
+      const heat = new Array(SIZE * SIZE).fill(0);
+      const hits = openHits();
+      for (const size of remaining) {
+        for (let r = 0; r < SIZE; r++) {
+          for (let c = 0; c < SIZE; c++) {
+            for (const vertical of [false, true]) {
+              const cells = shipCells(r, c, size, vertical);
+              if (!cells.every(([rr, cc]) => inBounds(rr, cc))) continue;
+              let blocked = false, covered = 0;
+              for (const [rr, cc] of cells) {
+                const s = shots[key(rr, cc)];
+                if (s === "miss" || s === "sunk") { blocked = true; break; }
+                if (s === "hit") covered++;
+              }
+              if (blocked) continue;
+              if (hits.length && covered === 0) continue;
+              const weight = hits.length ? Math.pow(20, covered) : 1;
+              for (const [rr, cc] of cells) if (!shots[key(rr, cc)]) heat[key(rr, cc)] += weight;
+            }
+          }
+        }
+      }
+      let best = -1, choices = [];
+      for (const [r, c] of unshot()) {
+        const h = heat[key(r, c)];
+        if (h > best) { best = h; choices = [[r, c]]; }
+        else if (h === best) choices.push([r, c]);
+      }
+      if (best <= 0) return normalMove();
+      return pick(choices);
+    }
+
+    return {
+      nextMove() {
+        if (level === "easy") return easyMove();
+        if (level === "hard") return hardMove();
+        return normalMove();
+      },
+      record(r, c, outcome) {
+        if (outcome.result === "miss") { shots[key(r, c)] = "miss"; return; }
+        shots[key(r, c)] = "hit";
+        if (outcome.result === "sunk") {
+          outcome.ship.cells.forEach(([rr, cc]) => { shots[key(rr, cc)] = "sunk"; });
+          const i = remaining.indexOf(outcome.ship.size);
+          if (i !== -1) remaining.splice(i, 1);
+        }
+      }
+    };
+  }
+
+  // ---------- Game state ----------
+  const state = {
+    phase: "setup",   // setup | battle | over
+    player: makeBoard(),
+    enemy: null,
+    ai: null,
+    turn: "player",
+    selected: 0,
+    vertical: false,
+    lastPlayerShot: null,
+    lastAIShot: null,
+    playerShots: 0, playerHits: 0,
+    aiShots: 0, aiHits: 0
+  };
+
+  // ---------- Rendering ----------
+  function buildGrid(outerEl, gridClass) {
+    outerEl.innerHTML = "";
+    const corner = document.createElement("div");
+    const cols = document.createElement("div");
+    cols.className = "col-labels";
+    for (let c = 0; c < SIZE; c++) { const d = document.createElement("div"); d.textContent = LETTERS[c]; cols.appendChild(d); }
+    const rows = document.createElement("div");
+    rows.className = "row-labels";
+    for (let r = 0; r < SIZE; r++) { const d = document.createElement("div"); d.textContent = r + 1; rows.appendChild(d); }
+    const grid = document.createElement("div");
+    grid.className = "grid " + gridClass;
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.r = r; cell.dataset.c = c;
+        cell.setAttribute("aria-label", label(r, c));
+        grid.appendChild(cell);
+      }
+    }
+    outerEl.append(corner, cols, rows, grid);
+    return grid;
+  }
+
+  const playerGrid = buildGrid($("playerOuter"), "player");
+  const enemyGrid = buildGrid($("enemyOuter"), "enemy");
+  const cellAt = (grid, r, c) => grid.children[key(r, c)];
+
+  function renderPlayer() {
+    const b = state.player;
+    playerGrid.classList.toggle("placing", state.phase === "setup");
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const el = cellAt(playerGrid, r, c);
+        const k = key(r, c);
+        const idx = b.owner[k];
+        el.className = "cell";
+        if (idx !== -1) el.classList.add(isSunk(b.ships[idx]) ? "sunk" : "ship");
+        if (b.shots[k] === "miss") el.classList.add("miss");
+        if (b.shots[k] === "hit") el.classList.add("hit");
+        if (state.lastAIShot === k) el.classList.add("last");
+      }
+    }
+  }
+
+  function renderEnemy() {
+    const b = state.enemy;
+    enemyGrid.classList.toggle("active", state.phase === "battle" && state.turn === "player");
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const el = cellAt(enemyGrid, r, c);
+        const k = key(r, c);
+        el.className = "cell";
+        const idx = b.owner[k];
+        const revealed = state.phase === "over" && idx !== -1;
+        if (idx !== -1 && isSunk(b.ships[idx])) el.classList.add("sunk");
+        else if (revealed) el.classList.add("ship");
+        if (b.shots[k] === "miss") el.classList.add("miss");
+        if (b.shots[k] === "hit") el.classList.add("hit");
+        if (state.lastPlayerShot === k) el.classList.add("last");
+      }
+    }
+  }
+
+  function renderFleets() {
+    const pf = $("playerFleet");
+    pf.innerHTML = "";
+    pf.classList.toggle("placement", state.phase === "setup");
+    SHIPS.forEach((s, i) => {
+      const t = document.createElement("span");
+      t.className = "tag";
+      t.textContent = s.name + " (" + s.size + ")";
+      if (state.phase === "setup") {
+        const placed = state.player.ships.some((p) => p.name === s.name);
+        if (placed) t.classList.add("placed");
+        else if (i === state.selected) t.classList.add("selected");
+        if (!placed) t.addEventListener("click", () => { state.selected = i; render(); });
+      } else {
+        const ship = state.player.ships.find((p) => p.name === s.name);
+        if (ship && isSunk(ship)) t.classList.add("sunk");
+      }
+      pf.appendChild(t);
+    });
+
+    const ef = $("enemyFleet");
+    ef.innerHTML = "";
+    if (state.enemy) {
+      state.enemy.ships.forEach((s) => {
+        const t = document.createElement("span");
+        t.className = "tag" + (isSunk(s) ? " sunk" : "");
+        t.textContent = s.name + " (" + s.size + ")";
+        ef.appendChild(t);
+      });
+    }
+  }
+
+  function renderStats() {
+    const pct = (h, s) => (s ? Math.round((h / s) * 100) : 0) + "%";
+    $("playerStats").innerHTML = state.phase === "setup" ? "" :
+      "Your shots: <b>" + state.playerShots + "</b> &middot; Hits: <b>" + state.playerHits + "</b> &middot; Accuracy: <b>" + pct(state.playerHits, state.playerShots) + "</b>";
+    $("aiStats").innerHTML = state.phase === "setup" ? "" :
+      "Computer shots: <b>" + state.aiShots + "</b> &middot; Hits: <b>" + state.aiHits + "</b> &middot; Accuracy: <b>" + pct(state.aiHits, state.aiShots) + "</b>";
+  }
+
+  function setStatus(html) { $("status").innerHTML = html; }
+
+  function render() {
+    renderPlayer();
+    if (state.enemy) renderEnemy();
+    renderFleets();
+    renderStats();
+    const setup = state.phase === "setup";
+    $("setupControls").classList.toggle("hidden", !setup);
+    $("battleControls").classList.toggle("hidden", setup);
+    $("enemyWrap").classList.toggle("hidden", setup);
+    $("logWrap").classList.toggle("hidden", setup);
+    $("startBtn").disabled = state.player.ships.length !== SHIPS.length;
+    if (setup) {
+      if (state.player.ships.length === SHIPS.length) {
+        setStatus("All ships placed. Choose an opponent level and click <strong>Start battle</strong>.");
+      } else {
+        const s = SHIPS[state.selected];
+        setStatus("Place your <strong>" + s.name + "</strong> (" + s.size + " squares, " +
+          (state.vertical ? "vertical" : "horizontal") + "). Click a square on your board.");
+      }
+    }
+  }
+
+  function log(text, who) {
+    const p = document.createElement("p");
+    p.className = who;
+    p.textContent = text;
+    const el = $("log");
+    el.prepend(p);
+  }
+
+  // ---------- Setup interactions ----------
+  function nextUnplaced() {
+    const placedNames = new Set(state.player.ships.map((s) => s.name));
+    const i = SHIPS.findIndex((s) => !placedNames.has(s.name));
+    state.selected = i === -1 ? 0 : i;
+  }
+
+  function clearPreview() {
+    for (const el of playerGrid.children) el.classList.remove("preview-ok", "preview-bad");
+  }
+
+  function showPreview(r, c) {
+    clearPreview();
+    if (state.phase !== "setup" || state.player.ships.length === SHIPS.length) return;
+    const ship = SHIPS[state.selected];
+    const cells = shipCells(r, c, ship.size, state.vertical);
+    const ok = canPlace(state.player, cells);
+    cells.forEach(([rr, cc]) => {
+      if (inBounds(rr, cc)) cellAt(playerGrid, rr, cc).classList.add(ok ? "preview-ok" : "preview-bad");
+    });
+  }
+
+  playerGrid.addEventListener("mouseover", (e) => {
+    const el = e.target.closest(".cell");
+    if (el) showPreview(+el.dataset.r, +el.dataset.c);
+  });
+  playerGrid.addEventListener("mouseleave", clearPreview);
+
+  playerGrid.addEventListener("click", (e) => {
+    const el = e.target.closest(".cell");
+    if (!el || state.phase !== "setup") return;
+    const r = +el.dataset.r, c = +el.dataset.c;
+    const existing = state.player.owner[key(r, c)];
+    if (existing !== -1) {
+      // Clicking a placed ship picks it back up.
+      const removed = state.player.ships[existing];
+      const keep = state.player.ships.filter((_, i) => i !== existing);
+      state.player = makeBoard();
+      keep.forEach((s) => placeShip(state.player, s, s.cells));
+      state.selected = SHIPS.findIndex((s) => s.name === removed.name);
+      render();
+      return;
+    }
+    if (state.player.ships.length === SHIPS.length) return;
+    const ship = SHIPS[state.selected];
+    const cells = shipCells(r, c, ship.size, state.vertical);
+    if (!canPlace(state.player, cells)) {
+      setStatus("That doesn't fit there. Try another square or <strong>Rotate</strong>.");
+      return;
+    }
+    placeShip(state.player, ship, cells);
+    nextUnplaced();
+    clearPreview();
+    render();
+  });
+
+  function rotate() {
+    if (state.phase !== "setup") return;
+    state.vertical = !state.vertical;
+    render();
+  }
+  $("rotateBtn").addEventListener("click", rotate);
+  document.addEventListener("keydown", (e) => { if (e.key === "r" || e.key === "R") rotate(); });
+
+  $("randomBtn").addEventListener("click", () => { state.player = randomFleet(); render(); });
+  $("clearBtn").addEventListener("click", () => { state.player = makeBoard(); state.selected = 0; render(); });
+
+  // ---------- Battle ----------
+  $("startBtn").addEventListener("click", () => {
+    if (state.player.ships.length !== SHIPS.length) return;
+    state.enemy = randomFleet();
+    state.ai = makeAI($("difficulty").value);
+    state.phase = "battle";
+    state.turn = "player";
+    $("log").innerHTML = "";
+    log("Battle started. You fire first.", "you");
+    setStatus("Your turn. Click a square in <strong>Enemy Waters</strong> to fire.");
+    render();
+  });
+
+  enemyGrid.addEventListener("click", (e) => {
+    const el = e.target.closest(".cell");
+    if (!el || state.phase !== "battle" || state.turn !== "player") return;
+    const r = +el.dataset.r, c = +el.dataset.c;
+    if (state.enemy.shots[key(r, c)]) return;
+
+    const out = fireAt(state.enemy, r, c);
+    state.playerShots++;
+    state.lastPlayerShot = key(r, c);
+    let msg;
+    if (out.result === "miss") msg = "You fired at " + label(r, c) + ": miss.";
+    else {
+      state.playerHits++;
+      msg = out.result === "sunk" ? "You fired at " + label(r, c) + ": you sank their " + out.ship.name + "!" : "You fired at " + label(r, c) + ": hit!";
+    }
+    log(msg, "you");
+
+    if (allSunk(state.enemy)) { endGame(true); return; }
+
+    state.turn = "ai";
+    setStatus(msg + " Computer is aiming&hellip;");
+    render();
+    setTimeout(aiTurn, AI_DELAY_MS);
+  });
+
+  function aiTurn() {
+    if (state.phase !== "battle") return;
+    const [r, c] = state.ai.nextMove();
+    const out = fireAt(state.player, r, c);
+    state.ai.record(r, c, out);
+    state.aiShots++;
+    state.lastAIShot = key(r, c);
+    let msg;
+    if (out.result === "miss") msg = "Computer fired at " + label(r, c) + ": miss.";
+    else {
+      state.aiHits++;
+      msg = out.result === "sunk" ? "Computer fired at " + label(r, c) + ": it sank your " + out.ship.name + "!" : "Computer fired at " + label(r, c) + ": hit!";
+    }
+    log(msg, "ai");
+
+    if (allSunk(state.player)) { endGame(false); return; }
+
+    state.turn = "player";
+    setStatus(msg + " <strong>Your turn.</strong>");
+    render();
+  }
+
+  function endGame(playerWon) {
+    state.phase = "over";
+    render();
+    const text = playerWon
+      ? "You sank the whole enemy fleet in " + state.playerShots + " shots."
+      : "The computer sank your fleet in " + state.aiShots + " shots. Its remaining ships are now revealed.";
+    setStatus(playerWon ? "<strong>Victory!</strong> " + text : "<strong>Defeat.</strong> " + text);
+    log(playerWon ? "You win!" : "The computer wins.", playerWon ? "you" : "ai");
+    $("modalTitle").textContent = playerWon ? "You win! \u{1F389}" : "You lost";
+    $("modalText").textContent = text;
+    setTimeout(() => $("modal").classList.add("show"), 400);
+  }
+
+  function newGame() {
+    $("modal").classList.remove("show");
+    Object.assign(state, {
+      phase: "setup", player: makeBoard(), enemy: null, ai: null, turn: "player",
+      selected: 0, vertical: false, lastPlayerShot: null, lastAIShot: null,
+      playerShots: 0, playerHits: 0, aiShots: 0, aiHits: 0
+    });
+    $("log").innerHTML = "";
+    render();
+  }
+  $("newGameBtn").addEventListener("click", newGame);
+  $("playAgainBtn").addEventListener("click", newGame);
+  $("modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("modal").classList.remove("show"); });
+
+  render();
+})();
+</script>
+</body>
+</html>
