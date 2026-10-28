@@ -3,7 +3,7 @@
 **Game:** https://egparton22.github.io/battleship/
 
 ## How I tested
-- **Automated play:** a script played 36 full games against all three computer levels (Easy, Normal, Hard). It checked that every game ended correctly and that the computer never fired at the same square twice.
+- **Automated play:** a script played more than 40 full games against all three computer levels (Easy, Normal, Hard). It checked that every game ended correctly and that the computer never fired at the same square twice.
 - **Stress tests:** clicking fast, restarting in the middle of a game, and starting a new game right after one ended.
 - **Screen sizes:** a laptop browser plus phone-sized screens (iPhone SE and smaller).
 
