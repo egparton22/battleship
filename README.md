@@ -4,6 +4,8 @@ A browser version of the classic Battleship board game, played against a compute
 
 **Play it here:** https://egparton22.github.io/battleship/
 
+**Bug report:** [BUGS.md](BUGS.md)
+
 ## How to play
 1. Place your 5 ships (or click **Place ships randomly**). Press **R** or click **Rotate** to switch direction.
 2. Pick the computer's skill level and click **Start battle**.

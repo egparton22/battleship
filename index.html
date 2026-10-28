@@ -70,7 +70,7 @@
   .board-wrap h2 { margin: 0 0 10px; font-size: 18px; text-align: center; }
   .board-wrap h2 small { color: var(--muted); font-weight: normal; }
   .grid-outer { display: grid; grid-template-columns: calc(var(--cell) * .8) auto; }
-  .col-labels, .row-labels { display: grid; color: var(--muted); font-size: 12px; }
+  .col-labels, .row-labels { display: grid; gap: 2px; color: var(--muted); font-size: 12px; }
   .col-labels { grid-template-columns: repeat(10, var(--cell)); grid-column: 2; }
   .row-labels { grid-template-rows: repeat(10, var(--cell)); }
   .col-labels div, .row-labels div { display: flex; align-items: center; justify-content: center; height: calc(var(--cell) * .8); }
@@ -107,7 +107,7 @@
   .fleet .tag.selected { background: var(--accent); color: #1b1b1b; border-color: var(--accent); font-weight: 700; }
   .fleet.placement .tag { cursor: pointer; }
 
-  .stats { display: flex; gap: 18px; justify-content: center; margin-top: 10px; color: var(--muted); font-size: 14px; }
+  .stats { text-align: center; margin-top: 10px; color: var(--muted); font-size: 14px; max-width: calc(var(--cell) * 11); margin-left: auto; margin-right: auto; }
   .stats b { color: var(--text); }
 
   .log {
@@ -393,7 +393,8 @@
     lastPlayerShot: null,
     lastAIShot: null,
     playerShots: 0, playerHits: 0,
-    aiShots: 0, aiHits: 0
+    aiShots: 0, aiHits: 0,
+    gameId: 0
   };
 
   // ---------- Rendering ----------
@@ -605,6 +606,7 @@
     if (state.player.ships.length !== SHIPS.length) return;
     state.enemy = randomFleet();
     state.ai = makeAI($("difficulty").value);
+    state.gameId++;
     state.phase = "battle";
     state.turn = "player";
     $("log").innerHTML = "";
@@ -635,11 +637,13 @@
     state.turn = "ai";
     setStatus(msg + " Computer is aiming&hellip;");
     render();
-    setTimeout(aiTurn, AI_DELAY_MS);
+    const gameId = state.gameId;
+    setTimeout(() => aiTurn(gameId), AI_DELAY_MS);
   });
 
-  function aiTurn() {
-    if (state.phase !== "battle") return;
+  function aiTurn(gameId) {
+    // Ignore a delayed computer shot left over from a game that was restarted.
+    if (state.phase !== "battle" || gameId !== state.gameId) return;
     const [r, c] = state.ai.nextMove();
     const out = fireAt(state.player, r, c);
     state.ai.record(r, c, out);
@@ -670,7 +674,8 @@
     log(playerWon ? "You win!" : "The computer wins.", playerWon ? "you" : "ai");
     $("modalTitle").textContent = playerWon ? "You win! \u{1F389}" : "You lost";
     $("modalText").textContent = text;
-    setTimeout(() => $("modal").classList.add("show"), 400);
+    const gameId = state.gameId;
+    setTimeout(() => { if (state.phase === "over" && gameId === state.gameId) $("modal").classList.add("show"); }, 400);
   }
 
   function newGame() {
@@ -678,7 +683,8 @@
     Object.assign(state, {
       phase: "setup", player: makeBoard(), enemy: null, ai: null, turn: "player",
       selected: 0, vertical: false, lastPlayerShot: null, lastAIShot: null,
-      playerShots: 0, playerHits: 0, aiShots: 0, aiHits: 0
+      playerShots: 0, playerHits: 0, aiShots: 0, aiHits: 0,
+      gameId: state.gameId + 1
     });
     $("log").innerHTML = "";
     render();
